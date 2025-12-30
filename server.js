@@ -7,6 +7,7 @@ require('dotenv').config();
 
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const doctorRoutes = require('./routes/doctorRoutes');
 
 const app = express();
 
@@ -228,6 +229,9 @@ app.use('/api/auth', limiter, authRoutes);
 
 // 6. Admin routes
 app.use('/api/admin', adminRoutes);
+
+// 7. Doctor routes
+app.use('/api/doctor', doctorRoutes);
 
 // ==================== ERROR HANDLERS ====================
 // 404 handler - MUST BE THE LAST ROUTE
