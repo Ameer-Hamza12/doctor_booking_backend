@@ -1,18 +1,19 @@
 const Doctor = require('../models/Doctor');
 const User = require('../models/User');
+const path = require('path');
+const fs = require('fs');
 
 // ============================================
 // 🩺 DOCTOR PROFILE MANAGEMENT
 // ============================================
 
 /**
- * @desc    Create or update doctor profile
+ * @desc    Create or update doctor profile (with optional image upload)
  * @route   POST /api/doctor/profile
  * @access  Private (Doctor only)
  * 
- * 📝 Explanation: When a doctor signs up, they need to complete their profile
- * with qualifications, experience, license, etc. This API handles both
- * creating new profile and updating existing one.
+ * 📝 Explanation: This handles both profile creation/update and profile image upload
+ * in a single endpoint. If a file is uploaded, it processes it along with other profile data.
  */
 const createOrUpdateProfile = async (req, res) => {
   try {
@@ -26,6 +27,10 @@ const createOrUpdateProfile = async (req, res) => {
 
     // Check if user is a doctor
     if (req.user.role !== 'doctor') {
+      // Delete uploaded file if not doctor
+      if (req.file) {
+        fs.unlinkSync(req.file.path);
+      }
       return res.status(403).json({
         success: false,
         error: 'Only doctors can create/update doctor profiles'
@@ -36,10 +41,14 @@ const createOrUpdateProfile = async (req, res) => {
     if (licenseNumber) {
       const existingDoctor = await Doctor.findOne({ 
         licenseNumber,
-        userId: { $ne: req.user._id } // Check other doctors, not current
+        userId: { $ne: req.user._id }
       });
       
       if (existingDoctor) {
+        // Delete uploaded file if license number exists
+        if (req.file) {
+          fs.unlinkSync(req.file.path);
+        }
         return res.status(400).json({
           success: false,
           error: 'License number already registered'
@@ -57,6 +66,19 @@ const createOrUpdateProfile = async (req, res) => {
       doctor.licenseNumber = licenseNumber || doctor.licenseNumber;
       doctor.hospital = hospital || doctor.hospital;
       doctor.consultationFee = consultationFee || doctor.consultationFee;
+      
+      // Handle profile image if uploaded
+      if (req.file) {
+        // Delete old image if exists
+        if (doctor.profileImage) {
+          const oldImagePath = path.join(__dirname, '..', doctor.profileImage);
+          if (fs.existsSync(oldImagePath)) {
+            fs.unlinkSync(oldImagePath);
+          }
+        }
+        // Store relative path for easier access
+        doctor.profileImage = `uploads/doctor-profiles/${req.file.filename}`;
+      }
     } else {
       // Create new profile
       doctor = new Doctor({
@@ -66,28 +88,44 @@ const createOrUpdateProfile = async (req, res) => {
         licenseNumber,
         hospital: hospital || {},
         consultationFee: consultationFee || 0,
-        availableSlots: [] // Start with empty slots
+        availableSlots: [],
+        // Add profile image if uploaded
+        profileImage: req.file ? `uploads/doctor-profiles/${req.file.filename}` : null
       });
     }
 
     await doctor.save();
 
+    // Prepare response data
+    const responseData = {
+      doctorId: doctor._id,
+      userId: doctor.userId,
+      qualifications: doctor.qualifications,
+      experience: doctor.experience,
+      licenseNumber: doctor.licenseNumber,
+      hospital: doctor.hospital,
+      consultationFee: doctor.consultationFee,
+      isApproved: doctor.approvedBy ? true : false
+    };
+
+    // Add profile image URL if exists
+    if (doctor.profileImage) {
+      responseData.profileImage = doctor.profileImage;
+      responseData.profileImageUrl = `${req.protocol}://${req.get('host')}/${doctor.profileImage}`;
+    }
+
     res.status(200).json({
       success: true,
       message: doctor.isNew ? 'Doctor profile created' : 'Doctor profile updated',
-      data: {
-        doctorId: doctor._id,
-        userId: doctor.userId,
-        qualifications: doctor.qualifications,
-        experience: doctor.experience,
-        licenseNumber: doctor.licenseNumber,
-        hospital: doctor.hospital,
-        consultationFee: doctor.consultationFee,
-        isApproved: doctor.approvedBy ? true : false
-      }
+      data: responseData
     });
 
   } catch (error) {
+    // Delete uploaded file if error occurs
+    if (req.file) {
+      fs.unlinkSync(req.file.path);
+    }
+    
     console.error('Doctor profile error:', error);
     res.status(500).json({
       success: false,
@@ -97,12 +135,148 @@ const createOrUpdateProfile = async (req, res) => {
 };
 
 /**
+ * @desc    Update only profile image
+ * @route   POST /api/doctor/profile/image
+ * @access  Private (Doctor only)
+ * 
+ * 📝 Explanation: Separate endpoint for updating only the profile image.
+ * This allows doctors to change their profile picture without updating other profile data.
+ */
+const updateProfileImage = async (req, res) => {
+  try {
+    // Check if user is a doctor
+    if (req.user.role !== 'doctor') {
+      if (req.file) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(403).json({
+        success: false,
+        error: 'Only doctors can update profile image'
+      });
+    }
+
+    // Check if file was uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No image file provided'
+      });
+    }
+
+    const doctor = await Doctor.findOne({ userId: req.user._id });
+
+    if (!doctor) {
+      // Delete uploaded file if no doctor profile
+      fs.unlinkSync(req.file.path);
+      return res.status(404).json({
+        success: false,
+        error: 'Doctor profile not found. Please complete your profile first.'
+      });
+    }
+
+    // Delete old image if exists
+    if (doctor.profileImage) {
+      const oldImagePath = path.join(__dirname, '..', doctor.profileImage);
+      if (fs.existsSync(oldImagePath)) {
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    // Update with new image path
+    doctor.profileImage = `uploads/doctor-profiles/${req.file.filename}`;
+    await doctor.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile image updated successfully',
+      data: {
+        profileImage: doctor.profileImage,
+        profileImageUrl: `${req.protocol}://${req.get('host')}/${doctor.profileImage}`
+      }
+    });
+
+  } catch (error) {
+    // Delete uploaded file if error occurs
+    if (req.file) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    console.error('Update profile image error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while updating profile image'
+    });
+  }
+};
+
+/**
+ * @desc    Delete profile image
+ * @route   DELETE /api/doctor/profile/image
+ * @access  Private (Doctor only)
+ * 
+ * 📝 Explanation: Allows doctors to remove their profile image
+ */
+const deleteProfileImage = async (req, res) => {
+  try {
+    // Check if user is a doctor
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only doctors can delete profile image'
+      });
+    }
+
+    const doctor = await Doctor.findOne({ userId: req.user._id });
+
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        error: 'Doctor profile not found'
+      });
+    }
+
+    // Check if profile image exists
+    if (!doctor.profileImage) {
+      return res.status(400).json({
+        success: false,
+        error: 'No profile image to delete'
+      });
+    }
+
+    // Delete the image file
+    const imagePath = path.join(__dirname, '..', doctor.profileImage);
+    if (fs.existsSync(imagePath)) {
+      fs.unlinkSync(imagePath);
+    }
+
+    // Remove image reference from database
+    doctor.profileImage = null;
+    await doctor.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile image deleted successfully',
+      data: {
+        profileImage: null
+      }
+    });
+
+  } catch (error) {
+    console.error('Delete profile image error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while deleting profile image'
+    });
+  }
+};
+
+/**
  * @desc    Get doctor profile
  * @route   GET /api/doctor/profile
  * @access  Private (Doctor only)
  * 
- * 📝 Explanation: Doctors need to view their complete profile including
- * approval status, ratings, and available slots.
+ * 📝 Explanation: Returns complete doctor profile including populated user data
+ * and full URL for the profile image.
  */
 const getProfile = async (req, res) => {
   try {
@@ -116,7 +290,7 @@ const getProfile = async (req, res) => {
 
     const doctor = await Doctor.findOne({ userId: req.user._id })
       .populate('approvedBy', 'name email')
-      .populate('userId', 'name email phone specialization profileImage isVerified');
+      .populate('userId', 'name email phone specialization isVerified');
 
     if (!doctor) {
       return res.status(404).json({
@@ -125,9 +299,17 @@ const getProfile = async (req, res) => {
       });
     }
 
+    // Create a response object with full image URL
+    const profileData = doctor.toObject();
+    
+    // Add full URL for profile image
+    if (profileData.profileImage) {
+      profileData.profileImageUrl = `${req.protocol}://${req.get('host')}/${profileData.profileImage}`;
+    }
+
     res.status(200).json({
       success: true,
-      data: doctor
+      data: profileData
     });
 
   } catch (error) {
@@ -147,10 +329,6 @@ const getProfile = async (req, res) => {
  * @desc    Add available time slots
  * @route   POST /api/doctor/slots
  * @access  Private (Doctor only)
- * 
- * 📝 Explanation: Doctors set their available time slots for appointments.
- * Each slot includes day, start time, end time, and availability status.
- * Example: Monday, 9:00 AM - 5:00 PM
  */
 const addTimeSlots = async (req, res) => {
   try {
@@ -278,9 +456,6 @@ const addTimeSlots = async (req, res) => {
  * @desc    Get all time slots
  * @route   GET /api/doctor/slots
  * @access  Private (Doctor only)
- * 
- * 📝 Explanation: Doctors can view all their scheduled time slots.
- * Returns slots grouped by day for easier display.
  */
 const getTimeSlots = async (req, res) => {
   try {
@@ -350,9 +525,6 @@ const getTimeSlots = async (req, res) => {
  * @desc    Update a specific time slot
  * @route   PUT /api/doctor/slots/:slotId
  * @access  Private (Doctor only)
- * 
- * 📝 Explanation: Doctors can update individual time slots.
- * Useful for marking slots as unavailable (on leave) or changing times.
  */
 const updateTimeSlot = async (req, res) => {
   try {
@@ -480,9 +652,6 @@ const updateTimeSlot = async (req, res) => {
  * @desc    Delete a time slot
  * @route   DELETE /api/doctor/slots/:slotId
  * @access  Private (Doctor only)
- * 
- * 📝 Explanation: Remove a time slot permanently.
- * Use this when a doctor wants to remove a specific time slot.
  */
 const deleteTimeSlot = async (req, res) => {
   try {
@@ -541,9 +710,6 @@ const deleteTimeSlot = async (req, res) => {
  * @desc    Get available slots for patients
  * @route   GET /api/doctor/:doctorId/slots/available
  * @access  Public/Private (For patients to book)
- * 
- * 📝 Explanation: Patients can see available time slots for a specific doctor.
- * Only shows slots that are marked as available.
  */
 const getAvailableSlotsForPatients = async (req, res) => {
   try {
@@ -584,20 +750,28 @@ const getAvailableSlotsForPatients = async (req, res) => {
       });
     });
 
+    // Prepare response data
+    const responseData = {
+      doctor: {
+        id: doctor._id,
+        name: doctor.userId.name,
+        specialization: doctor.userId.specialization,
+        consultationFee: doctor.consultationFee,
+        experience: doctor.experience,
+        ratings: doctor.ratings
+      },
+      availableSlots: slotsByDay,
+      totalAvailableSlots: availableSlots.length
+    };
+
+    // Add profile image URL if exists
+    if (doctor.profileImage) {
+      responseData.doctor.profileImageUrl = `${req.protocol}://${req.get('host')}/${doctor.profileImage}`;
+    }
+
     res.status(200).json({
       success: true,
-      data: {
-        doctor: {
-          id: doctor._id,
-          name: doctor.userId.name,
-          specialization: doctor.userId.specialization,
-          consultationFee: doctor.consultationFee,
-          experience: doctor.experience,
-          ratings: doctor.ratings
-        },
-        availableSlots: slotsByDay,
-        totalAvailableSlots: availableSlots.length
-      }
+      data: responseData
     });
 
   } catch (error) {
@@ -617,9 +791,6 @@ const getAvailableSlotsForPatients = async (req, res) => {
  * @desc    Get doctor statistics
  * @route   GET /api/doctor/stats
  * @access  Private (Doctor only)
- * 
- * 📝 Explanation: Doctors can see their statistics like total slots,
- * available slots, ratings, etc.
  */
 const getDoctorStats = async (req, res) => {
   try {
@@ -655,25 +826,34 @@ const getDoctorStats = async (req, res) => {
       if (slot.isAvailable) slotsByDay[slot.day].available++;
     });
 
+    // Prepare response data
+    const responseData = {
+      profileStats: {
+        isApproved: !!doctor.approvedBy,
+        experience: doctor.experience,
+        consultationFee: doctor.consultationFee,
+        rating: doctor.ratings.average,
+        totalReviews: doctor.ratings.count,
+        hasProfileImage: !!doctor.profileImage
+      },
+      slotStats: {
+        totalSlots,
+        availableSlots,
+        bookedSlots,
+        availabilityPercentage: totalSlots > 0 ? Math.round((availableSlots / totalSlots) * 100) : 0
+      },
+      slotsByDay,
+      nextAvailableSlot: doctor.availableSlots.find(slot => slot.isAvailable)
+    };
+
+    // Add profile image URL if exists
+    if (doctor.profileImage) {
+      responseData.profileStats.profileImageUrl = `${req.protocol}://${req.get('host')}/${doctor.profileImage}`;
+    }
+
     res.status(200).json({
       success: true,
-      data: {
-        profileStats: {
-          isApproved: !!doctor.approvedBy,
-          experience: doctor.experience,
-          consultationFee: doctor.consultationFee,
-          rating: doctor.ratings.average,
-          totalReviews: doctor.ratings.count
-        },
-        slotStats: {
-          totalSlots,
-          availableSlots,
-          bookedSlots,
-          availabilityPercentage: totalSlots > 0 ? Math.round((availableSlots / totalSlots) * 100) : 0
-        },
-        slotsByDay,
-        nextAvailableSlot: doctor.availableSlots.find(slot => slot.isAvailable)
-      }
+      data: responseData
     });
 
   } catch (error) {
@@ -689,6 +869,8 @@ module.exports = {
   // Profile Management
   createOrUpdateProfile,
   getProfile,
+  updateProfileImage,
+  deleteProfileImage, // Add this new function
   
   // Time Slots Management
   addTimeSlots,

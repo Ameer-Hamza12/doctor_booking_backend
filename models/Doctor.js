@@ -7,6 +7,10 @@ const doctorSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  profileImage: {
+    type: String,
+    default: null
+  },
   qualifications: [{
     degree: String,
     university: String,
