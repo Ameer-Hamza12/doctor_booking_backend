@@ -11,7 +11,7 @@ const patientSchema = new mongoose.Schema({
     type: String,
     enum: ['male', 'female', 'other']
   },
-  age: {
+  age: { 
     type: Number,
     min: 0,
     max: 120

@@ -388,9 +388,111 @@ const cancelAppointment = async (req, res) => {
   }
 };
 
+
+// Get patient profile
+const getPatientProfile = async (req, res) => {
+  try {
+    const profile = await Patient.findOne({ userId: req.user._id });
+    
+    if (!profile) {
+      // Create a default profile if none exists
+      const defaultProfile = {
+        userId: req.user._id,
+        gender: '',
+        age: '',
+        bloodGroup: '',
+        medicalHistory: [],
+        allergies: [],
+        medications: [],
+        emergencyContact: {}
+      };
+      return res.json({ 
+        success: true, 
+        profile: defaultProfile,
+        message: 'No profile found, returning default'
+      });
+    }
+    
+    res.json({ 
+      success: true, 
+      profile 
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error' 
+    });
+  }
+};
+
+// Update patient profile
+const updatePatientProfile = async (req, res) => {
+  try {
+    const {
+      gender,
+      age,
+      bloodGroup,
+      allergies,
+      medicalHistory,
+      medications,
+      emergencyContact
+    } = req.body;
+
+    // Validate required fields
+    if (!gender || !age || !bloodGroup) {
+      return res.status(400).json({
+        success: false,
+        message: 'Gender, age, and blood group are required'
+      });
+    }
+
+    let profile = await Patient.findOne({ userId: req.user._id });
+
+    if (!profile) {
+      // Create new profile
+      profile = new Patient({
+        userId: req.user._id,
+        gender,
+        age,
+        bloodGroup,
+        allergies: allergies || [],
+        medicalHistory: medicalHistory || [],
+        medications: medications || [],
+        emergencyContact: emergencyContact || {}
+      });
+    } else {
+      // Update existing profile
+      profile.gender = gender;
+      profile.age = age;
+      profile.bloodGroup = bloodGroup;
+      profile.allergies = allergies || [];
+      profile.medicalHistory = medicalHistory || [];
+      profile.medications = medications || [];
+      profile.emergencyContact = emergencyContact || {};
+    }
+
+    await profile.save();
+    
+    res.json({ 
+      success: true,
+      message: 'Profile updated successfully',
+      profile 
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error' 
+    });
+  }
+};
+
 module.exports = {
   getDoctors,
   bookAppointment,
   getPatientAppointments,
-  cancelAppointment
+  cancelAppointment,
+  getPatientProfile,
+  updatePatientProfile
 };

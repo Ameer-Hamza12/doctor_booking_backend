@@ -4,7 +4,9 @@ const {
   getDoctors,
   bookAppointment,
   getPatientAppointments,
-  cancelAppointment
+  cancelAppointment,
+  getPatientProfile,
+  updatePatientProfile
 } = require('../controllers/patientController');
 
 const { protect } = require('../middlewares/authMiddleware');
@@ -22,5 +24,10 @@ router.route('/appointments')
   .post(authorize('patient'), bookAppointment);
 
 router.put('/appointments/:id/cancel', authorize('patient'), cancelAppointment);
+
+// Patient Profile routes
+router.route('/profile')
+  .get(authorize('patient'), getPatientProfile)
+  .put(authorize('patient'), updatePatientProfile);
 
 module.exports = router;
