@@ -144,9 +144,9 @@ const createOrUpdateProfile = async (req, res) => {
     };
 
     // Add profile image URL if exists
-    if (doctor.profileImage) {
-      responseData.profileImage = doctor.profileImage;
-      responseData.profileImageUrl = `${req.protocol}://${req.get('host')}/${doctor.profileImage}`;
+    if (profileImagePath) {
+      responseData.profileImage = profileImagePath;
+      responseData.profileImageUrl = `${req.protocol}://${req.get('host')}/${profileImagePath}`;
     }
 
     res.status(200).json({
@@ -330,7 +330,7 @@ const getProfile = async (req, res) => {
 
     const doctor = await Doctor.findOne({ userId: req.user._id })
       .populate('approvedBy', 'name email')
-      .populate('userId', 'name email phone specialization isVerified');
+      .populate('userId', 'name email phone specialization isVerified profileImage');
 
     if (!doctor) {
       return res.status(404).json({
@@ -342,9 +342,10 @@ const getProfile = async (req, res) => {
     // Create a response object with full image URL
     const profileData = doctor.toObject();
 
-    // Add full URL for profile image
-    if (profileData.profileImage) {
-      profileData.profileImageUrl = `${req.protocol}://${req.get('host')}/${profileData.profileImage}`;
+    // Add full URL for profile image from User model
+    if (profileData.userId?.profileImage) {
+      profileData.profileImageUrl = `${req.protocol}://${req.get('host')}/${profileData.userId.profileImage}`;
+      profileData.profileImage = profileData.userId.profileImage;
     }
 
     res.status(200).json({

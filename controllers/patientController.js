@@ -392,12 +392,14 @@ const cancelAppointment = async (req, res) => {
 // Get patient profile
 const getPatientProfile = async (req, res) => {
   try {
-    const profile = await Patient.findOne({ userId: req.user._id });
+    const profile = await Patient.findOne({ userId: req.user._id })
+      .populate('userId', 'name email phone profileImage');
 
     if (!profile) {
-      // Create a default profile if none exists
+      // Return user data even if no patient profile exists
+      const user = await User.findById(req.user._id).select('name email phone profileImage');
       const defaultProfile = {
-        userId: req.user._id,
+        userId: user,
         gender: '',
         age: '',
         bloodGroup: '',
@@ -406,16 +408,39 @@ const getPatientProfile = async (req, res) => {
         medications: [],
         emergencyContact: {}
       };
+
+      // Add profile image URL if exists
+      if (user.profileImage) {
+        defaultProfile.profileImageUrl = `${req.protocol}://${req.get('host')}/${user.profileImage}`;
+        defaultProfile.profileImage = user.profileImage;
+      }
+
       return res.json({
         success: true,
-        profile: defaultProfile,
+        data: defaultProfile,
         message: 'No profile found, returning default'
       });
     }
 
+    // Convert to object and add profile image URL
+    const profileData = profile.toObject();
+
+    // Add profile image from User model
+    if (profileData.userId?.profileImage) {
+      profileData.profileImageUrl = `${req.protocol}://${req.get('host')}/${profileData.userId.profileImage}`;
+      profileData.profileImage = profileData.userId.profileImage;
+    }
+
+    // Add user details at root level for easier access
+    if (profileData.userId) {
+      profileData.name = profileData.userId.name;
+      profileData.email = profileData.userId.email;
+      profileData.phone = profileData.userId.phone;
+    }
+
     res.json({
       success: true,
-      profile
+      data: profileData
     });
   } catch (error) {
     console.error('Get profile error:', error);
