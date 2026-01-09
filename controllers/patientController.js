@@ -328,7 +328,7 @@ const cancelAppointment = async (req, res) => {
     // Check cancellation window (24 hours)
     const appointmentDate = new Date(appointment.date);
     const hoursUntilAppointment = (appointmentDate - new Date()) / (1000 * 60 * 60);
-    
+
     if (hoursUntilAppointment < 24 && hoursUntilAppointment > 0) {
       return res.status(400).json({
         success: false,
@@ -393,7 +393,7 @@ const cancelAppointment = async (req, res) => {
 const getPatientProfile = async (req, res) => {
   try {
     const profile = await Patient.findOne({ userId: req.user._id });
-    
+
     if (!profile) {
       // Create a default profile if none exists
       const defaultProfile = {
@@ -406,22 +406,22 @@ const getPatientProfile = async (req, res) => {
         medications: [],
         emergencyContact: {}
       };
-      return res.json({ 
-        success: true, 
+      return res.json({
+        success: true,
         profile: defaultProfile,
         message: 'No profile found, returning default'
       });
     }
-    
-    res.json({ 
-      success: true, 
-      profile 
+
+    res.json({
+      success: true,
+      profile
     });
   } catch (error) {
     console.error('Get profile error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error' 
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
     });
   }
 };
@@ -473,17 +473,77 @@ const updatePatientProfile = async (req, res) => {
     }
 
     await profile.save();
-    
-    res.json({ 
+
+    res.json({
       success: true,
       message: 'Profile updated successfully',
-      profile 
+      profile
     });
   } catch (error) {
     console.error('Update profile error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error' 
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// Update patient profile image
+const updateProfileImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No image file provided'
+      });
+    }
+
+    // Get fs and path module if not already imported (assuming they are needed or imported at top)
+    const fs = require('fs');
+    const path = require('path');
+
+    const user = await User.findById(req.user._id);
+
+    // Delete old image if exists
+    if (user.profileImage) {
+      const oldImagePath = path.join(__dirname, '..', user.profileImage);
+      if (fs.existsSync(oldImagePath)) {
+        try {
+          fs.unlinkSync(oldImagePath);
+        } catch (err) {
+          console.error('Error deleting old image:', err);
+        }
+      }
+    }
+
+    // Update user profile image
+    user.profileImage = `uploads/patient-profiles/${req.file.filename}`;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile image updated successfully',
+      data: {
+        profileImage: user.profileImage,
+        profileImageUrl: `${req.protocol}://${req.get('host')}/${user.profileImage}`
+      }
+    });
+
+  } catch (error) {
+    // Delete uploaded file if error
+    if (req.file) {
+      const fs = require('fs');
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (err) {
+        console.error('Error deleting uploaded file:', err);
+      }
+    }
+
+    console.error('Update profile image error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating profile image'
     });
   }
 };
@@ -494,5 +554,6 @@ module.exports = {
   getPatientAppointments,
   cancelAppointment,
   getPatientProfile,
-  updatePatientProfile
+  updatePatientProfile,
+  updateProfileImage
 };

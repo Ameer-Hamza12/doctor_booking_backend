@@ -17,7 +17,7 @@ const app = express();
 const validateEnv = () => {
   const required = [
     'MONGODB_URI',
-    'JWT_SECRET', 
+    'JWT_SECRET',
     'JWT_REFRESH_SECRET',
     'EMAIL_USER',
     'EMAIL_PASS',
@@ -25,7 +25,7 @@ const validateEnv = () => {
   ];
 
   const missing = required.filter(key => !process.env[key]);
-  
+
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:', missing);
     console.error('💡 Please check your .env file');
@@ -54,39 +54,43 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Serve static files
+const path = require('path');
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // MongoDB connection with improved error handling
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
   serverSelectionTimeoutMS: 5000,
 })
-.then(() => {
-  console.log('✅ MongoDB connected successfully');
-  
-  // Check database status
-  mongoose.connection.db.admin().ping((err, result) => {
-    if (err) {
-      console.error('❌ MongoDB ping failed:', err);
-    } else {
-      console.log('✅ MongoDB ping successful:', result);
-    }
-  });
-})
-.catch(err => {
-  console.error('❌ MongoDB connection error:', err.message);
-  console.log('💡 Trying to connect to default MongoDB...');
-  
-  // Try default connection
-  mongoose.connect('mongodb://localhost:27017/doctor_booking', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
+  .then(() => {
+    console.log('✅ MongoDB connected successfully');
+
+    // Check database status
+    mongoose.connection.db.admin().ping((err, result) => {
+      if (err) {
+        console.error('❌ MongoDB ping failed:', err);
+      } else {
+        console.log('✅ MongoDB ping successful:', result);
+      }
+    });
   })
-  .then(() => console.log('✅ Connected to default MongoDB'))
-  .catch(err2 => {
-    console.error('❌ Failed to connect to MongoDB:', err2.message);
-    console.log('💡 Please ensure MongoDB is running');
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err.message);
+    console.log('💡 Trying to connect to default MongoDB...');
+
+    // Try default connection
+    mongoose.connect('mongodb://localhost:27017/doctor_booking', {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    })
+      .then(() => console.log('✅ Connected to default MongoDB'))
+      .catch(err2 => {
+        console.error('❌ Failed to connect to MongoDB:', err2.message);
+        console.log('💡 Please ensure MongoDB is running');
+      });
   });
-});
 
 // ==================== ROUTES ====================
 
@@ -99,9 +103,9 @@ app.get('/api/health', (req, res) => {
     2: 'connecting',
     3: 'disconnecting'
   };
-  
-  res.status(200).json({ 
-    status: 'OK', 
+
+  res.status(200).json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
     service: 'Doctor Booking API',
     version: '1.0.0',
@@ -145,7 +149,7 @@ app.get('/', (req, res) => {
 app.post('/api/test-email', async (req, res) => {
   try {
     console.log('📧 Test email request received');
-    
+
     // Check if email credentials are configured
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
       return res.status(400).json({
@@ -156,7 +160,7 @@ app.post('/api/test-email', async (req, res) => {
     }
 
     const nodemailer = require('nodemailer');
-    
+
     // Create transporter
     const transporter = nodemailer.createTransport({
       host: process.env.EMAIL_HOST || 'smtp.gmail.com',
@@ -167,11 +171,11 @@ app.post('/api/test-email', async (req, res) => {
         pass: process.env.EMAIL_PASS
       }
     });
-    
+
     // Verify connection
     await transporter.verify();
     console.log('✅ SMTP connection verified');
-    
+
     // Send test email
     const info = await transporter.sendMail({
       from: `"Doctor Booking" <${process.env.EMAIL_USER}>`,
@@ -191,9 +195,9 @@ app.post('/api/test-email', async (req, res) => {
         </div>
       `
     });
-    
+
     console.log('✅ Test email sent successfully:', info.messageId);
-    
+
     res.json({
       success: true,
       message: 'Test email sent successfully! Check your inbox.',
@@ -201,7 +205,7 @@ app.post('/api/test-email', async (req, res) => {
       accepted: info.accepted,
       rejected: info.rejected
     });
-    
+
   } catch (error) {
     console.error('❌ Test email error:', error);
     res.status(500).json({
@@ -243,7 +247,7 @@ app.use('/api/doctor', doctorAppointmentRoutes);
 // 404 handler - MUST BE THE LAST ROUTE
 app.use('*', (req, res) => {
   console.log(`🔍 404: ${req.method} ${req.originalUrl}`);
-  res.status(404).json({ 
+  res.status(404).json({
     success: false,
     error: 'Endpoint not found',
     path: req.originalUrl,
@@ -255,16 +259,16 @@ app.use('*', (req, res) => {
 // Global error handling middleware
 app.use((err, req, res, next) => {
   console.error('💥 Server Error:', err.stack || err);
-  
+
   const statusCode = err.status || 500;
   const message = err.message || 'Internal Server Error';
-  
+
   res.status(statusCode).json({
     success: false,
     error: message,
-    ...(process.env.NODE_ENV === 'development' && { 
+    ...(process.env.NODE_ENV === 'development' && {
       stack: err.stack,
-      details: err.details 
+      details: err.details
     })
   });
 });

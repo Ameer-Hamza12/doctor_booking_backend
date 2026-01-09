@@ -27,9 +27,10 @@ const createOrUpdateProfile = async (req, res) => {
 
     // Check if user is a doctor
     if (req.user.role !== 'doctor') {
-      // Delete uploaded file if not doctor
-      if (req.file) {
-        fs.unlinkSync(req.file.path);
+      // Delete uploaded files if not doctor
+      if (req.files) {
+        if (req.files.profileImage) fs.unlinkSync(req.files.profileImage[0].path);
+        if (req.files.documents) req.files.documents.forEach(doc => fs.unlinkSync(doc.path));
       }
       return res.status(403).json({
         success: false,
@@ -39,15 +40,16 @@ const createOrUpdateProfile = async (req, res) => {
 
     // Check if license number is already taken
     if (licenseNumber) {
-      const existingDoctor = await Doctor.findOne({ 
+      const existingDoctor = await Doctor.findOne({
         licenseNumber,
         userId: { $ne: req.user._id }
       });
-      
+
       if (existingDoctor) {
-        // Delete uploaded file if license number exists
-        if (req.file) {
-          fs.unlinkSync(req.file.path);
+        // Delete uploaded files if license number exists
+        if (req.files) {
+          if (req.files.profileImage) fs.unlinkSync(req.files.profileImage[0].path);
+          if (req.files.documents) req.files.documents.forEach(doc => fs.unlinkSync(doc.path));
         }
         return res.status(400).json({
           success: false,
@@ -59,16 +61,39 @@ const createOrUpdateProfile = async (req, res) => {
     // Create or update doctor profile
     let doctor = await Doctor.findOne({ userId: req.user._id });
 
+    // Handle uploaded files
+    let profileImagePath = null;
+    let documentPaths = [];
+
+    if (req.files) {
+      // Handle profile image
+      if (req.files.profileImage && req.files.profileImage[0]) {
+        profileImagePath = `uploads/doctor-profiles/${req.files.profileImage[0].filename}`;
+      }
+
+      // Handle documents
+      if (req.files.documents) {
+        documentPaths = req.files.documents.map(doc => ({
+          path: `uploads/doctor-documents/${doc.filename}`,
+          originalName: doc.originalname
+        }));
+      }
+    }
+
     if (doctor) {
       // Update existing profile
-      doctor.qualifications = qualifications || doctor.qualifications;
+      if (qualifications) {
+        doctor.qualifications = typeof qualifications === 'string' ? JSON.parse(qualifications) : qualifications;
+      }
       doctor.experience = experience || doctor.experience;
       doctor.licenseNumber = licenseNumber || doctor.licenseNumber;
-      doctor.hospital = hospital || doctor.hospital;
+      if (hospital) {
+        doctor.hospital = typeof hospital === 'string' ? JSON.parse(hospital) : hospital;
+      }
       doctor.consultationFee = consultationFee || doctor.consultationFee;
-      
-      // Handle profile image if uploaded
-      if (req.file) {
+
+      // Update profile image
+      if (profileImagePath) {
         // Delete old image if exists
         if (doctor.profileImage) {
           const oldImagePath = path.join(__dirname, '..', doctor.profileImage);
@@ -76,25 +101,34 @@ const createOrUpdateProfile = async (req, res) => {
             fs.unlinkSync(oldImagePath);
           }
         }
-        // Store relative path for easier access
-        doctor.profileImage = `uploads/doctor-profiles/${req.file.filename}`;
+        doctor.profileImage = profileImagePath;
+      }
+
+      // Add new documents
+      if (documentPaths.length > 0) {
+        doctor.documents.push(...documentPaths);
       }
     } else {
       // Create new profile
       doctor = new Doctor({
         userId: req.user._id,
-        qualifications: qualifications || [],
+        qualifications: qualifications ? (typeof qualifications === 'string' ? JSON.parse(qualifications) : qualifications) : [],
         experience: experience || 0,
         licenseNumber,
-        hospital: hospital || {},
+        hospital: hospital ? (typeof hospital === 'string' ? JSON.parse(hospital) : hospital) : {},
         consultationFee: consultationFee || 0,
         availableSlots: [],
-        // Add profile image if uploaded
-        profileImage: req.file ? `uploads/doctor-profiles/${req.file.filename}` : null
+        profileImage: profileImagePath || null,
+        documents: documentPaths
       });
     }
 
     await doctor.save();
+
+    // Also update User model profile image
+    if (profileImagePath) {
+      await User.findByIdAndUpdate(req.user._id, { profileImage: profileImagePath });
+    }
 
     // Prepare response data
     const responseData = {
@@ -105,7 +139,8 @@ const createOrUpdateProfile = async (req, res) => {
       licenseNumber: doctor.licenseNumber,
       hospital: doctor.hospital,
       consultationFee: doctor.consultationFee,
-      isApproved: doctor.approvedBy ? true : false
+      isApproved: doctor.approvedBy ? true : false,
+      documents: doctor.documents
     };
 
     // Add profile image URL if exists
@@ -121,11 +156,16 @@ const createOrUpdateProfile = async (req, res) => {
     });
 
   } catch (error) {
-    // Delete uploaded file if error occurs
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
+    // Delete uploaded files if error occurs
+    if (req.files) {
+      try {
+        if (req.files.profileImage) fs.unlinkSync(req.files.profileImage[0].path);
+        if (req.files.documents) req.files.documents.forEach(doc => fs.unlinkSync(doc.path));
+      } catch (err) {
+        console.error('Error deleting files:', err);
+      }
     }
-    
+
     console.error('Doctor profile error:', error);
     res.status(500).json({
       success: false,
@@ -200,7 +240,7 @@ const updateProfileImage = async (req, res) => {
     if (req.file) {
       fs.unlinkSync(req.file.path);
     }
-    
+
     console.error('Update profile image error:', error);
     res.status(500).json({
       success: false,
@@ -301,7 +341,7 @@ const getProfile = async (req, res) => {
 
     // Create a response object with full image URL
     const profileData = doctor.toObject();
-    
+
     // Add full URL for profile image
     if (profileData.profileImage) {
       profileData.profileImageUrl = `${req.protocol}://${req.get('host')}/${profileData.profileImage}`;
@@ -372,7 +412,7 @@ const addTimeSlots = async (req, res) => {
       // Convert times to Date objects for comparison
       const start = new Date(`1970-01-01T${slot.startTime}:00`);
       const end = new Date(`1970-01-01T${slot.endTime}:00`);
-      
+
       // Check if start time is before end time
       if (start >= end) {
         throw new Error('Start time must be before end time');
@@ -404,7 +444,7 @@ const addTimeSlots = async (req, res) => {
 
     // Check for overlapping slots
     validatedSlots.forEach(newSlot => {
-      const existingSlot = doctor.availableSlots.find(existing => 
+      const existingSlot = doctor.availableSlots.find(existing =>
         existing.day === newSlot.day &&
         (
           (newSlot.startTime >= existing.startTime && newSlot.startTime < existing.endTime) ||
@@ -433,12 +473,12 @@ const addTimeSlots = async (req, res) => {
 
   } catch (error) {
     console.error('Add time slots error:', error);
-    
-    if (error.message.includes('Invalid day') || 
-        error.message.includes('Time must be') || 
-        error.message.includes('Start time') ||
-        error.message.includes('Minimum slot') ||
-        error.message.includes('overlaps')) {
+
+    if (error.message.includes('Invalid day') ||
+      error.message.includes('Time must be') ||
+      error.message.includes('Start time') ||
+      error.message.includes('Minimum slot') ||
+      error.message.includes('overlaps')) {
       return res.status(400).json({
         success: false,
         error: error.message
@@ -561,7 +601,7 @@ const updateTimeSlot = async (req, res) => {
     }
 
     const slot = doctor.availableSlots[slotIndex];
-    
+
     // Update fields if provided
     if (startTime !== undefined) {
       // Validate time format
@@ -595,7 +635,7 @@ const updateTimeSlot = async (req, res) => {
     if (startTime !== undefined || endTime !== undefined) {
       const start = new Date(`1970-01-01T${slot.startTime}:00`);
       const end = new Date(`1970-01-01T${slot.endTime}:00`);
-      
+
       if (start >= end) {
         return res.status(400).json({
           success: false,
@@ -606,7 +646,7 @@ const updateTimeSlot = async (req, res) => {
       // Check for overlaps with other slots (excluding current slot)
       const hasOverlap = doctor.availableSlots.some((existingSlot, index) => {
         if (index === slotIndex) return false; // Skip current slot
-        
+
         return existingSlot.day === slot.day &&
           (
             (slot.startTime >= existingSlot.startTime && slot.startTime < existingSlot.endTime) ||
@@ -871,14 +911,14 @@ module.exports = {
   getProfile,
   updateProfileImage,
   deleteProfileImage, // Add this new function
-  
+
   // Time Slots Management
   addTimeSlots,
   getTimeSlots,
   updateTimeSlot,
   deleteTimeSlot,
   getAvailableSlotsForPatients,
-  
+
   // Statistics
   getDoctorStats
 };

@@ -6,11 +6,13 @@ const {
   getPatientAppointments,
   cancelAppointment,
   getPatientProfile,
-  updatePatientProfile
+  updatePatientProfile,
+  updateProfileImage
 } = require('../controllers/patientController');
 
 const { protect } = require('../middlewares/authMiddleware');
 const { authorize } = require('../middlewares/roleMiddleware');
+const upload = require('../middlewares/uploadMiddleware');
 
 // All patient routes require authentication
 router.use(protect);
@@ -28,6 +30,10 @@ router.put('/appointments/:id/cancel', authorize('patient'), cancelAppointment);
 // Patient Profile routes
 router.route('/profile')
   .get(authorize('patient'), getPatientProfile)
+  .get(authorize('patient'), getPatientProfile)
   .put(authorize('patient'), updatePatientProfile);
+
+// Profile Image
+router.post('/profile/image', authorize('patient'), upload.single('profileImage'), updateProfileImage);
 
 module.exports = router;

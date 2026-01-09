@@ -17,27 +17,27 @@ const getDashboardStats = async (req, res) => {
       User.countDocuments(),
       User.countDocuments({ role: 'doctor' }),
       User.countDocuments({ role: 'patient' }),
-      User.countDocuments({ 
-        role: 'doctor', 
-        isApproved: false, 
+      User.countDocuments({
+        role: 'doctor',
+        isApproved: false,
         isBlocked: false,
-        isVerified: true 
+        isVerified: true
       }),
-      User.countDocuments({ 
-        role: 'doctor', 
-        isApproved: true, 
-        isBlocked: false 
+      User.countDocuments({
+        role: 'doctor',
+        isApproved: true,
+        isBlocked: false
       }),
-      User.countDocuments({ 
-        role: 'doctor', 
-        isBlocked: true 
+      User.countDocuments({
+        role: 'doctor',
+        isBlocked: true
       })
     ]);
 
     // Recent registrations (last 7 days)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    
+
     const recentRegistrations = await User.countDocuments({
       createdAt: { $gte: sevenDaysAgo }
     });
@@ -158,7 +158,7 @@ const getDoctors = async (req, res) => {
       doctors.map(async (doctor) => {
         const doctorDetails = await Doctor.findOne({ userId: doctor._id })
           .select('qualifications experience licenseNumber hospital consultationFee availableSlots ratings');
-        
+
         return {
           ...doctor.toObject(),
           doctorDetails: doctorDetails || null
@@ -189,14 +189,14 @@ const getDoctors = async (req, res) => {
 const approveDoctor = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    
+
     if (!user || user.role !== 'doctor') {
       return res.status(404).json({
         success: false,
         error: 'Doctor not found'
       });
     }
-    
+
     // Check if already approved
     if (user.isApproved) {
       return res.status(400).json({
@@ -204,25 +204,25 @@ const approveDoctor = async (req, res) => {
         error: 'Doctor is already approved'
       });
     }
-    
+
     // Update User model with approval
     user.isApproved = true;
     user.isBlocked = false;
     user.approvedBy = req.user._id;
     user.approvedAt = Date.now();
-    
+
     await user.save();
-    
+
     // Also update Doctor model if needed
     await Doctor.findOneAndUpdate(
       { userId: user._id },
-      { 
+      {
         approvedBy: req.user._id,
         approvedAt: Date.now()
       },
       { new: true }
     );
-    
+
     res.status(200).json({
       success: true,
       message: 'Doctor approved successfully',
@@ -251,14 +251,14 @@ const approveDoctor = async (req, res) => {
 const blockDoctor = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    
+
     if (!user || user.role !== 'doctor') {
       return res.status(404).json({
         success: false,
         error: 'Doctor not found'
       });
     }
-    
+
     // Check if already blocked
     if (user.isBlocked) {
       return res.status(400).json({
@@ -266,11 +266,11 @@ const blockDoctor = async (req, res) => {
         error: 'Doctor is already blocked'
       });
     }
-    
+
     user.isBlocked = true;
     user.isApproved = false;
     await user.save();
-    
+
     res.status(200).json({
       success: true,
       message: 'Doctor blocked successfully',
@@ -297,14 +297,14 @@ const blockDoctor = async (req, res) => {
 const unblockDoctor = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    
+
     if (!user || user.role !== 'doctor') {
       return res.status(404).json({
         success: false,
         error: 'Doctor not found'
       });
     }
-    
+
     // Check if not blocked
     if (!user.isBlocked) {
       return res.status(400).json({
@@ -312,10 +312,10 @@ const unblockDoctor = async (req, res) => {
         error: 'Doctor is not blocked'
       });
     }
-    
+
     user.isBlocked = false;
     await user.save();
-    
+
     res.status(200).json({
       success: true,
       message: 'Doctor unblocked successfully',
@@ -342,14 +342,14 @@ const unblockDoctor = async (req, res) => {
 const toggleUserActive = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
         error: 'User not found'
       });
     }
-    
+
     // Prevent deactivating yourself
     if (user._id.toString() === req.user._id.toString()) {
       return res.status(400).json({
@@ -357,10 +357,10 @@ const toggleUserActive = async (req, res) => {
         error: 'Cannot deactivate your own account'
       });
     }
-    
+
     user.isActive = !user.isActive;
     await user.save();
-    
+
     res.status(200).json({
       success: true,
       message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
@@ -388,20 +388,20 @@ const getUserById = async (req, res) => {
     const user = await User.findById(req.params.id)
       .select('-password -verificationToken -verificationTokenExpire -passwordResetToken -passwordResetExpire')
       .populate('approvedBy', 'name email');
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
         error: 'User not found'
       });
     }
-    
+
     // If user is doctor, get doctor details
     let doctorDetails = null;
     if (user.role === 'doctor') {
       doctorDetails = await Doctor.findOne({ userId: user._id });
     }
-    
+
     res.status(200).json({
       success: true,
       data: {
@@ -424,14 +424,14 @@ const getUserById = async (req, res) => {
 const deleteUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
         error: 'User not found'
       });
     }
-    
+
     // Don't allow deleting yourself
     if (user._id.toString() === req.user._id.toString()) {
       return res.status(400).json({
@@ -439,14 +439,14 @@ const deleteUser = async (req, res) => {
         error: 'Cannot delete your own account'
       });
     }
-    
+
     // If user is doctor, delete doctor profile too
     if (user.role === 'doctor') {
       await Doctor.findOneAndDelete({ userId: user._id });
     }
-    
+
     await User.findByIdAndDelete(req.params.id);
-    
+
     res.status(200).json({
       success: true,
       message: 'User deleted successfully'
@@ -460,6 +460,67 @@ const deleteUser = async (req, res) => {
   }
 };
 
+// @desc    Update admin profile image
+// @route   POST /api/admin/profile/image
+// @access  Private/Admin
+const updateProfileImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No image file provided'
+      });
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+
+    const user = await User.findById(req.user._id);
+
+    // Delete old image if exists
+    if (user.profileImage) {
+      const oldImagePath = path.join(__dirname, '..', user.profileImage);
+      if (fs.existsSync(oldImagePath)) {
+        try {
+          fs.unlinkSync(oldImagePath);
+        } catch (err) {
+          console.error('Error deleting old image:', err);
+        }
+      }
+    }
+
+    // Update user profile image
+    user.profileImage = `uploads/admin-profiles/${req.file.filename}`;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile image updated successfully',
+      data: {
+        profileImage: user.profileImage,
+        profileImageUrl: `${req.protocol}://${req.get('host')}/${user.profileImage}`
+      }
+    });
+
+  } catch (error) {
+    // Delete uploaded file if error
+    if (req.file) {
+      const fs = require('fs');
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (err) {
+        console.error('Error deleting uploaded file:', err);
+      }
+    }
+
+    console.error('Update profile image error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating profile image'
+    });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getUsers,
@@ -469,5 +530,6 @@ module.exports = {
   unblockDoctor,
   toggleUserActive,
   getUserById,
-  deleteUser
+  deleteUser,
+  updateProfileImage
 };

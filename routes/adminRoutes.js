@@ -9,10 +9,12 @@ const {
   unblockDoctor,
   toggleUserActive,
   getUserById,
-  deleteUser
+  deleteUser,
+  updateProfileImage
 } = require('../controllers/adminController');
 const { protect } = require('../middlewares/authMiddleware');
 const { authorize } = require('../middlewares/roleMiddleware');
+const upload = require('../middlewares/uploadMiddleware');
 
 // Apply authentication and admin authorization to all routes
 router.use(protect);
@@ -20,6 +22,9 @@ router.use(authorize('admin'));
 
 // Dashboard routes
 router.get('/stats', getDashboardStats);
+
+// Profile Image
+router.post('/profile/image', upload.single('profileImage'), updateProfileImage);
 
 // User management routes
 router.get('/users', getUsers);
